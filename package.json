@@ -1,0 +1,18 @@
+{
+  "name": "news-platform",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev:windows",
+    "dev:all": "docker compose -f docker-compose.dev.yml up -d && npm run dev",
+    "dev:backend": "cd backend && .\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+    "dev:backend:noreload": "cd backend && .\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:concurrent": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:windows": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,green \"npm run dev:backend:noreload\" \"npm run dev:frontend\"",
+    "docker:dev": "docker compose -f docker-compose.dev.yml up -d",
+    "docker:dev:down": "docker compose -f docker-compose.dev.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
