@@ -222,6 +222,14 @@ def auto_publish_approved_items(self):
 
             dispatched = 0
             for item in items:
+                if settings.auto_publish_max_per_run > 0 and dispatched >= settings.auto_publish_max_per_run:
+                    logger.info(
+                        "auto_publish.limit_reached",
+                        limit=settings.auto_publish_max_per_run,
+                        dispatched=dispatched,
+                    )
+                    break
+
                 existing_records = db.execute(
                     select(PublishRecord).where(
                         and_(
@@ -251,9 +259,12 @@ def auto_publish_approved_items(self):
                         publish_to_website.delay(record.id)
                     elif record.target == PublishTarget.telegram:
                         publish_to_telegram.delay(record.id)
-
-                dispatched += len(created_records)
-                logger.info("auto_publish.dispatched", canonical_id=item.id, targets=[record.target.value for record in created_records])
+                dispatched += 1
+                logger.info(
+                    "auto_publish.dispatched",
+                    canonical_id=item.id,
+                    targets=[record.target.value for record in created_records],
+                )
 
             db.commit()
             logger.info("auto_publish_approved_items.done", dispatched=dispatched)

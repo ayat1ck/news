@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     auto_approve_enabled: bool = False
     auto_publish_enabled: bool = False
     auto_publish_targets: str = "website,telegram"
+    auto_publish_max_per_run: int = 0
 
     # Backend
     backend_url: str = "http://localhost:8000"
