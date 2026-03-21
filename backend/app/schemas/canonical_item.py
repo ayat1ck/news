@@ -63,3 +63,13 @@ class ModerationAction(BaseModel):
     action: str  # approve, reject, schedule
     scheduled_at: datetime | None = None
     edits: CanonicalItemUpdate | None = None
+
+
+class ManualRewriteRequest(BaseModel):
+    preserve_headline: bool = False
+
+
+class PreviewImageRequest(BaseModel):
+    regenerate: bool = False
+    prompt: str | None = None
+    safe_mode: bool = True

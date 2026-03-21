@@ -21,6 +21,9 @@ def normalize_text(text: str, raw_html: str = "") -> str:
     # Clean HTML tags from text
     text = _strip_html(text)
 
+    # Clean Telegram/Markdown noise
+    text = _clean_social_noise(text)
+
     # Remove tracking parameters from URLs
     text = _remove_tracking_params(text)
 
@@ -58,6 +61,36 @@ def _remove_tracking_params(text: str) -> str:
     """Remove common tracking parameters from URLs in text."""
     tracking_params = r"[?&](utm_\w+|fbclid|gclid|ref|source|medium|campaign)=[^\s&]*"
     return re.sub(tracking_params, "", text)
+
+
+def _clean_social_noise(text: str) -> str:
+    text = re.sub(r"\[([^\]]+)\]\((https?://[^\)]+)\)", r"\1", text)
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"[@#][\w\u0400-\u04FF_]+", "", text)
+    text = re.sub(
+        r"[\U0001F300-\U0001FAFF\U00002700-\U000027BF\U000024C2-\U0001F251]+",
+        "",
+        text,
+    )
+
+    cleaned_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip(" -*_~\t")
+        if not line:
+            cleaned_lines.append("")
+            continue
+        lowered = line.lower()
+        if lowered.startswith(("подписывайтесь", "листайте карточки", "смотрите карточки", "подробнее", "читайте также")):
+            continue
+        if "max" in lowered and len(line) < 80:
+            continue
+        if "вконтакте" in lowered and len(line) < 80:
+            continue
+        cleaned_lines.append(line)
+
+    text = "\n".join(cleaned_lines)
+    text = re.sub(r"[_*~`>{}\[\]|]+", "", text)
+    return text
 
 
 def _normalize_whitespace(text: str) -> str:

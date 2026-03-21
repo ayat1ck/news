@@ -12,6 +12,7 @@ from app.core.database import Base
 class SourceType(str, enum.Enum):
     telegram = "telegram"
     rss = "rss"
+    vk = "vk"
 
 
 class Source(Base):
@@ -27,6 +28,9 @@ class Source(Base):
     # RSS-specific
     feed_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # VK-specific
+    vk_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Common
     language: Mapped[str] = mapped_column(String(10), default="en", nullable=False)

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
         env_file=str(_ENV_FILE) if _ENV_FILE.exists() else ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # App
@@ -51,12 +52,16 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000,http://localhost:3001"
 
     # AI
-    ai_provider: Literal["gemini", "openai", "openrouter"] = "gemini"
+    ai_provider: Literal["gemini", "openai", "openrouter", "yandex"] = "gemini"
     gemini_api_key: str = ""
     gemini_image_model: str = "gemini-2.5-flash-image"
     openai_api_key: str = ""
     openrouter_api_key: str = ""
-    generate_image_fallbacks: bool = True
+    yandex_api_key: str = ""
+    yandex_folder_id: str = ""
+    yandex_text_model: str = "gpt://default"
+    yandex_image_model: str = "art://default"
+    enable_ai_images: bool = False
 
     # Telegram
     telegram_api_id: str = ""
@@ -65,13 +70,16 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_publish_channel_id: str = ""
 
+    # VK
+    vk_access_token: str = ""
+
     # Collection
     collection_interval_minutes: int = 60
 
     # Automation
     auto_approve_enabled: bool = False
     auto_publish_enabled: bool = False
-    auto_publish_targets: str = "website,telegram"
+    auto_publish_targets: str = "website"
     auto_publish_max_per_run: int = 0
 
     # Backend

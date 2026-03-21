@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { Search, Menu } from 'lucide-react';
 
-const CATEGORIES = ['Технологии', 'Бизнес', 'Наука', 'Дизайн', 'AI', 'Крипто'];
+const CATEGORIES = [
+  { id: 'general', label: 'Главная' },
+  { id: 'industry', label: 'Промышленность' },
+  { id: 'transport', label: 'Транспорт' },
+  { id: 'business', label: 'Бизнес' },
+  { id: 'technology', label: 'Технологии' },
+  { id: 'science', label: 'Наука' },
+];
 
 export function PublicHeader() {
   return (
@@ -14,16 +21,13 @@ export function PublicHeader() {
             NEWSFLUX
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-neutral-500">
-            <Link href="/" className="hover:text-black transition-colors">
-              Главная
-            </Link>
-            {CATEGORIES.slice(0, 4).map((item) => (
+            {CATEGORIES.map((item) => (
               <Link
-                key={item}
-                href={`/?category=${encodeURIComponent(item)}`}
+                key={item.id}
+                href={item.id === 'general' ? '/' : `/?topic=${encodeURIComponent(item.id)}`}
                 className="hover:text-black transition-colors"
               >
-                {item}
+                {item.label}
               </Link>
             ))}
           </nav>

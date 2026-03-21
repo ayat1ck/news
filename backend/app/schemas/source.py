@@ -12,6 +12,7 @@ class SourceCreate(BaseModel):
     channel_username: str | None = None
     feed_url: str | None = None
     site_name: str | None = None
+    vk_domain: str | None = None
     language: str = "en"
     topic: str | None = None
     priority: int = 0
@@ -30,6 +31,8 @@ class SourceCreate(BaseModel):
             raise ValueError("feed_url is required for RSS sources")
         if self.source_type == "telegram" and not self.channel_username:
             raise ValueError("channel_username is required for Telegram sources")
+        if self.source_type == "vk" and not self.vk_domain:
+            raise ValueError("vk_domain is required for VK sources")
         return self
 
     @field_validator("channel_username")
@@ -45,12 +48,25 @@ class SourceCreate(BaseModel):
         cleaned = cleaned.removeprefix("@")
         return cleaned or None
 
+    @field_validator("vk_domain")
+    @classmethod
+    def normalize_vk_domain(cls, value: str | None) -> str | None:
+        if not value:
+            return value
+        cleaned = value.strip()
+        if cleaned.startswith("http://") or cleaned.startswith("https://"):
+            parsed = urlparse(cleaned)
+            cleaned = parsed.path.strip("/")
+        cleaned = cleaned.removeprefix("vk.com/")
+        return cleaned.strip("/") or None
+
 
 class SourceUpdate(BaseModel):
     name: str | None = None
     channel_username: str | None = None
     feed_url: str | None = None
     site_name: str | None = None
+    vk_domain: str | None = None
     language: str | None = None
     topic: str | None = None
     priority: int | None = None
@@ -78,6 +94,18 @@ class SourceUpdate(BaseModel):
         cleaned = cleaned.removeprefix("@")
         return cleaned or None
 
+    @field_validator("vk_domain")
+    @classmethod
+    def normalize_vk_domain(cls, value: str | None) -> str | None:
+        if not value:
+            return value
+        cleaned = value.strip()
+        if cleaned.startswith("http://") or cleaned.startswith("https://"):
+            parsed = urlparse(cleaned)
+            cleaned = parsed.path.strip("/")
+        cleaned = cleaned.removeprefix("vk.com/")
+        return cleaned.strip("/") or None
+
 
 class SourceResponse(BaseModel):
     id: int
@@ -86,11 +114,16 @@ class SourceResponse(BaseModel):
     channel_username: str | None = None
     feed_url: str | None = None
     site_name: str | None = None
+    vk_domain: str | None = None
     language: str
     topic: str | None = None
     priority: int
     is_active: bool
     last_collected_at: datetime | None = None
+    latest_raw_at: datetime | None = None
+    total_items: int = 0
+    recent_items_24h: int = 0
+    health_status: str = "unknown"
     created_at: datetime
     updated_at: datetime
 

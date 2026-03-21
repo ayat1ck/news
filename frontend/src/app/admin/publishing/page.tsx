@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api';
-import { Card } from '@/components/ui/Card';
+import { Globe, RefreshCw, Send } from 'lucide-react';
+
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { Globe, RefreshCw, Send } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { apiFetch } from '@/lib/api';
 
 interface PublishRecord {
   id: number;
@@ -18,6 +19,12 @@ interface PublishRecord {
   error_message: string | null;
   published_at: string | null;
   created_at: string;
+}
+
+function targetLabel(value: string) {
+  if (value === 'website') return 'Сайт';
+  if (value === 'telegram') return 'Telegram';
+  return value;
 }
 
 export default function PublishingPage() {
@@ -43,7 +50,7 @@ export default function PublishingPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Publishing</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-neutral-400">Публикация</p>
           <h3 className="text-2xl font-bold">История публикаций</h3>
         </div>
         <Button variant="outline" onClick={loadHistory}>
@@ -55,7 +62,7 @@ export default function PublishingPage() {
         {loading ? (
           <Card className="p-8 text-center text-neutral-500">Загрузка...</Card>
         ) : records.length === 0 ? (
-          <Card className="p-8 text-center text-neutral-500">История публикаций пуста</Card>
+          <Card className="p-8 text-center text-neutral-500">История публикаций пуста.</Card>
         ) : (
           records.map((record) => (
             <Card key={record.id} className="p-5">
@@ -69,14 +76,14 @@ export default function PublishingPage() {
                     )}
                     <span className="text-sm font-bold">#{record.canonical_item_id}</span>
                     <Badge variant={variant(record.status) as 'success' | 'warning' | 'danger'}>{record.status}</Badge>
-                    <Badge variant="default">{record.target}</Badge>
+                    <Badge variant="default">{targetLabel(record.target)}</Badge>
                   </div>
                   <div className="text-sm text-neutral-600">
                     <p>Создано: {new Date(record.created_at).toLocaleString('ru-RU')}</p>
                     {record.published_at && <p>Опубликовано: {new Date(record.published_at).toLocaleString('ru-RU')}</p>}
                     {record.slug && <p>Slug: {record.slug}</p>}
-                    {record.telegram_message_id && <p>Telegram message: {record.telegram_message_id}</p>}
-                    {record.telegram_channel_id && <p>Channel: {record.telegram_channel_id}</p>}
+                    {record.telegram_message_id && <p>Сообщение Telegram: {record.telegram_message_id}</p>}
+                    {record.telegram_channel_id && <p>Канал: {record.telegram_channel_id}</p>}
                   </div>
                 </div>
                 {record.error_message ? (

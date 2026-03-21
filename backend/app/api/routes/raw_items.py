@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_role
 from app.models.raw_item import RawItem, RawItemStatus
+from app.models.source import Source, SourceType
 from app.models.user import User
 from app.schemas.raw_item import RawItemListResponse, RawItemResponse
 from app.workers.collectors.tasks import fetch_article_content
@@ -20,6 +21,7 @@ async def list_raw_items(
     page_size: int = Query(50, ge=1, le=200),
     status_filter: str | None = None,
     source_id: int | None = None,
+    source_type: str | None = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(require_role("admin", "moderator", "editor")),
 ):
@@ -33,6 +35,16 @@ async def list_raw_items(
     if source_id:
         query = query.where(RawItem.source_id == source_id)
         count_query = count_query.where(RawItem.source_id == source_id)
+    if source_type:
+        try:
+            normalized_source_type = SourceType(source_type)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported source_type filter",
+            ) from exc
+        query = query.join(Source, RawItem.source_id == Source.id).where(Source.source_type == normalized_source_type)
+        count_query = count_query.join(Source, RawItem.source_id == Source.id).where(Source.source_type == normalized_source_type)
 
     total = (await db.execute(count_query)).scalar() or 0
     query = query.order_by(RawItem.collected_at.desc()).offset((page - 1) * page_size).limit(page_size)
@@ -40,7 +52,7 @@ async def list_raw_items(
     items = result.scalars().all()
 
     return RawItemListResponse(
-        items=[RawItemResponse.model_validate(item) for item in items],
+        items=[_serialize_raw_item(item) for item in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -58,7 +70,7 @@ async def get_raw_item(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    return item
+    return _serialize_raw_item(item)
 
 
 @router.post("/{item_id}/fetch-content", status_code=status.HTTP_202_ACCEPTED)
@@ -75,3 +87,22 @@ async def trigger_fetch_article_content(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Raw item has no source URL")
     task = fetch_article_content.delay(item.id)
     return {"task_id": task.id, "status": "queued"}
+
+
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_raw_item(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin", "moderator")),
+):
+    result = await db.execute(select(RawItem).where(RawItem.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    await db.delete(item)
+
+
+def _serialize_raw_item(item: RawItem) -> RawItemResponse:
+    payload = RawItemResponse.model_validate(item)
+    payload.source_type = item.source.source_type.value if item.source else None
+    return payload

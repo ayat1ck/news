@@ -3,6 +3,8 @@
 import pytest
 from httpx import AsyncClient
 
+from app.models.canonical_item import CanonicalItem, CanonicalStatus
+from app.models.source import Source, SourceType
 
 @pytest.mark.asyncio
 async def test_health_check(client: AsyncClient):
@@ -97,6 +99,49 @@ async def test_sources_crud(client: AsyncClient, admin_token: str):
     # Delete
     response = await client.delete(f"/api/v1/sources/{source_id}", headers=headers)
     assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_create_vk_source(client: AsyncClient, admin_token: str):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = await client.post("/api/v1/sources/", json={
+        "source_type": "vk",
+        "name": "VK Public",
+        "vk_domain": "public_name",
+        "language": "ru",
+    }, headers=headers)
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["source_type"] == "vk"
+    assert payload["vk_domain"] == "public_name"
+
+
+@pytest.mark.asyncio
+async def test_publish_max_returns_501(client: AsyncClient, admin_token: str, db_session):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    source = Source(source_type=SourceType.rss, name="Test Source", feed_url="https://example.com/rss", language="en")
+    db_session.add(source)
+    await db_session.flush()
+    item = CanonicalItem(
+        headline="Test article",
+        summary="Summary",
+        body="Body",
+        slug="test-article",
+        language="en",
+        primary_source_id=source.id,
+        status=CanonicalStatus.approved,
+    )
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    response = await client.post(
+        f"/api/v1/publishing/{item.id}/publish",
+        json={"targets": ["max"]},
+        headers=headers,
+    )
+    assert response.status_code == 501
+    assert "not implemented" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

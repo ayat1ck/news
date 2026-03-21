@@ -169,22 +169,14 @@ def publish_scheduled_items(self):
             ).scalars().all()
 
             for item in items:
-                # Create publish records
                 website_record = PublishRecord(
                     canonical_item_id=item.id,
                     target=PublishTarget.website,
                 )
-                telegram_record = PublishRecord(
-                    canonical_item_id=item.id,
-                    target=PublishTarget.telegram,
-                )
                 db.add(website_record)
-                db.add(telegram_record)
                 db.flush()
 
-                # Dispatch publishing tasks
                 publish_to_website.delay(website_record.id)
-                publish_to_telegram.delay(telegram_record.id)
 
                 item.status = CanonicalStatus.published
                 logger.info("publish_scheduled.dispatched", canonical_id=item.id)
@@ -259,6 +251,9 @@ def auto_publish_approved_items(self):
                         publish_to_website.delay(record.id)
                     elif record.target == PublishTarget.telegram:
                         publish_to_telegram.delay(record.id)
+                    elif record.target == PublishTarget.max:
+                        record.status = PublishStatus.failed
+                        record.error_message = "Publishing to max is not implemented yet"
                 dispatched += 1
                 logger.info(
                     "auto_publish.dispatched",

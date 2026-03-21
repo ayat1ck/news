@@ -56,9 +56,18 @@ async def publish_item(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Item must be approved or scheduled"
         )
 
-    requested_targets = {PublishTarget(target_str) for target_str in payload.targets}
+    try:
+        requested_targets = {PublishTarget(target_str) for target_str in payload.targets}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     if not requested_targets:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one target is required")
+    if PublishTarget.max in requested_targets:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Publishing to max is not implemented yet",
+        )
 
     existing_records = (
         await db.execute(

@@ -12,6 +12,7 @@ from app.core.database import Base
 class PublishTarget(str, enum.Enum):
     website = "website"
     telegram = "telegram"
+    max = "max"
 
 
 class PublishStatus(str, enum.Enum):

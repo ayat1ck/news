@@ -1,11 +1,13 @@
-"""Public website API routes — unauthenticated access to published articles."""
+"""Public website API routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.models.canonical_item import CanonicalItem, CanonicalStatus
+from app.models.canonical_item import CanonicalItem, CanonicalSource, CanonicalStatus
+from app.core.topics import normalize_topic
 from app.schemas.canonical_item import CanonicalItemListResponse, CanonicalItemResponse
 
 router = APIRouter()
@@ -14,7 +16,6 @@ router = APIRouter()
 def _to_public_response(item: CanonicalItem) -> CanonicalItemResponse:
     media_url = None
     source_url = None
-
     if item.supporting_sources:
         raw_item = item.supporting_sources[0].raw_item
         if raw_item is not None:
@@ -44,18 +45,24 @@ def _to_public_response(item: CanonicalItem) -> CanonicalItemResponse:
         updated_at=item.updated_at,
     )
 
-
 @router.get("/articles", response_model=CanonicalItemListResponse)
 async def list_published_articles(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    topic: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """List published articles for the public website."""
-    query = select(CanonicalItem).where(CanonicalItem.status == CanonicalStatus.published)
-    count_query = select(func.count(CanonicalItem.id)).where(
-        CanonicalItem.status == CanonicalStatus.published
+    query = (
+        select(CanonicalItem)
+        .where(CanonicalItem.status == CanonicalStatus.published)
+        .options(selectinload(CanonicalItem.supporting_sources).selectinload(CanonicalSource.raw_item))
     )
+    count_query = select(func.count(CanonicalItem.id)).where(CanonicalItem.status == CanonicalStatus.published)
+
+    if topic:
+        normalized_topic = normalize_topic(topic)
+        query = query.where(CanonicalItem.topics == normalized_topic)
+        count_query = count_query.where(CanonicalItem.topics == normalized_topic)
 
     total = (await db.execute(count_query)).scalar() or 0
     query = query.order_by(CanonicalItem.published_at.desc()).offset((page - 1) * page_size).limit(page_size)
@@ -72,12 +79,15 @@ async def list_published_articles(
 
 @router.get("/articles/{slug}", response_model=CanonicalItemResponse)
 async def get_published_article(slug: str, db: AsyncSession = Depends(get_db)):
-    """Get a single published article by slug."""
-    result = await db.execute(
-        select(CanonicalItem).where(
-            CanonicalItem.slug == slug, CanonicalItem.status == CanonicalStatus.published
+    query = (
+        select(CanonicalItem)
+        .where(
+            CanonicalItem.slug == slug,
+            CanonicalItem.status == CanonicalStatus.published,
         )
+        .options(selectinload(CanonicalItem.supporting_sources).selectinload(CanonicalSource.raw_item))
     )
+    result = await db.execute(query)
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")

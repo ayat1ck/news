@@ -7,11 +7,12 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.topics import normalize_topic
 from app.models.canonical_item import CanonicalItem, CanonicalSource, CanonicalStatus
 from app.models.duplicate_group import DuplicateGroup, DuplicateGroupItem
 from app.models.filter_rule import FilterRule, FilterRuleType
 from app.models.raw_item import RawItem, RawItemStatus
-from app.models.source import Source
+from app.models.source import Source, SourceType
 from app.workers.celery_app import celery_app
 from app.workers.collectors.tasks import fetch_article_content_sync
 from app.workers.pipeline.normalization import normalize_text
@@ -130,8 +131,10 @@ def process_new_items(self):
 
             for item in items:
                 try:
-                    # Step 0: Fetch full article text for RSS/web items before normalization.
-                    if item.url:
+                    source = source_map.get(item.source_id)
+
+                    # Step 0: Fetch full article text only for RSS/web items before normalization.
+                    if item.url and source and source.source_type == SourceType.rss:
                         try:
                             fetch_status = fetch_article_content_sync(item, db)
                             if fetch_status == "success":
@@ -175,7 +178,7 @@ def process_new_items(self):
                         original_text=item.text,
                         slug=slug,
                         tags=rewrite_result.get("tags", ""),
-                        topics=rewrite_result.get("topics", ""),
+                        topics=normalize_topic(rewrite_result.get("topics", "")),
                         language=item.language or "en",
                         primary_source_id=item.source_id,
                         status=CanonicalStatus.approved if settings.auto_approve_enabled else CanonicalStatus.pending_review,
@@ -213,6 +216,10 @@ def _should_filter(item: RawItem, rules: list[FilterRule]) -> bool:
     """Apply filter rules to a raw item."""
     text = f"{item.title or ''} {item.text or ''}".lower()
 
+    if _is_promotional_or_low_signal(item.title or "", item.text or ""):
+        logger.info("filter.low_signal", raw_id=item.id)
+        return True
+
     for rule in rules:
         if rule.rule_type == FilterRuleType.blacklist_word:
             if rule.pattern.lower() in text:
@@ -221,6 +228,74 @@ def _should_filter(item: RawItem, rules: list[FilterRule]) -> bool:
         elif rule.rule_type == FilterRuleType.language_rule:
             if item.language and item.language != rule.pattern:
                 return True
+    return False
+
+
+def _is_promotional_or_low_signal(title: str, body: str) -> bool:
+    title_l = _normalize_space(title).lower()
+    body_l = _normalize_space(body).lower()
+    combined = f"{title_l}\n{body_l}"
+
+    hard_title_markers = (
+        "с днём рождения",
+        "с днем рождения",
+        "поздравление",
+        "итоги недели",
+        "дайджест",
+        "подборка",
+        "афиша",
+        "анонс",
+        "приглашаем",
+        "открыт набор",
+        "набор операторов",
+        "служба по контракту",
+        "билеты",
+        "круизы",
+        "романтический ужин",
+        "сенсация",
+        "загадочная арктика",
+        "кадровый резерв",
+        "траектория роста",
+        "школа мастеров",
+        "всё о карьере",
+        "все о карьере",
+    )
+    if any(marker in title_l for marker in hard_title_markers):
+        return True
+
+    hard_body_markers = (
+        "поздравляем вас",
+        "желаем всем",
+        "дорогие друзья",
+        "уважаемые коллеги",
+        "приглашаем вас",
+        "билеты уже",
+        "бронируйте",
+        "оставляйте бусты",
+        "подписывайтесь",
+        "больше новостей в телеграм-каналах",
+        "это настоящая сенсация",
+        "романтический ужин",
+        "служба по контракту",
+        "карьерной лестнице",
+        "кадровый резерв",
+        "индивидуальный план развития",
+        "реальный шанс вырасти",
+    )
+    if any(marker in combined for marker in hard_body_markers):
+        return True
+
+    poem_markers = (
+        "я ловлю на завтрак рыбу",
+        "белоснежным я слыву",
+        "меду и малине рад",
+    )
+    if any(marker in combined for marker in poem_markers):
+        return True
+
+    if combined.count("поздравляю") >= 1 and combined.count("оск") >= 1:
+        return True
+
     return False
 
 

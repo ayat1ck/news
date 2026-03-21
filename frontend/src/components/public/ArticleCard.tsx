@@ -41,22 +41,20 @@ export function ArticleCard({
   const [imageFailed, setImageFailed] = useState(false);
   const href = `/article/${slug || id}`;
   const tag = tags?.split(',')[0]?.trim() || 'Новости';
-  const imgSrc = media_url || 'https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?auto=format&fit=crop&q=80&w=800';
+  const hasImage = Boolean(media_url) && !imageFailed;
 
   return (
     <Link href={href} className={`group cursor-pointer block ${isHero ? 'md:grid md:grid-cols-2 gap-8 mb-12' : ''}`}>
       <div className={`relative overflow-hidden rounded-2xl bg-neutral-100 aspect-[16/9] ${!isHero ? 'mb-4' : ''}`}>
-        {!imageFailed ? (
+        {hasImage ? (
           <img
-            src={imgSrc}
+            src={media_url || ''}
             alt={headline || ''}
             className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
             onError={() => setImageFailed(true)}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-neutral-200 text-xs font-bold uppercase tracking-[0.3em] text-neutral-500">
-            Newsflux
-          </div>
+          <div className="h-full w-full bg-neutral-100" />
         )}
         <div className="absolute top-4 left-4">
           <Badge variant="success" className="bg-white/90 backdrop-blur shadow-sm">
@@ -68,9 +66,7 @@ export function ArticleCard({
         <div className="flex items-center gap-3 mb-3 text-xs text-neutral-400 font-medium uppercase tracking-wide">
           <span>{formatDate(published_at)}</span>
         </div>
-        <h2
-          className={`${isHero ? 'text-3xl md:text-5xl' : 'text-xl'} font-bold leading-tight mb-3 group-hover:text-neutral-600 transition-colors`}
-        >
+        <h2 className={`${isHero ? 'text-3xl md:text-5xl' : 'text-xl'} font-bold leading-tight mb-3 group-hover:text-neutral-600 transition-colors`}>
           {headline || 'Без заголовка'}
         </h2>
         <p className="text-neutral-500 text-sm md:text-base leading-relaxed line-clamp-2">

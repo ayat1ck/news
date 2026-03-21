@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class RawItemResponse(BaseModel):
     id: int
     source_id: int
+    source_type: str | None = None
     external_id: str | None = None
     url: str | None = None
     title: str | None = None
