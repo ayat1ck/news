@@ -5,7 +5,7 @@ services:
     env_file:
       - .env
     environment:
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS}
     ports:
       - "80:80"
       - "443:443"
