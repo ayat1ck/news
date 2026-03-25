@@ -1,4 +1,18 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const ENV_API_BASE = process.env.NEXT_PUBLIC_API_URL?.trim() || '';
+
+function resolveApiBase() {
+  if (ENV_API_BASE) return ENV_API_BASE;
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname, origin } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:8000';
+    }
+    if (protocol === 'http:' || protocol === 'https:') {
+      return origin;
+    }
+  }
+  return '';
+}
 
 type FetchOptions = {
   method?: string;
@@ -10,7 +24,8 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOptions = {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
 
-  const url = API_BASE ? `${API_BASE}${path}` : path;
+  const apiBase = resolveApiBase();
+  const url = apiBase ? `${apiBase}${path}` : path;
 
   const res = await fetch(url, {
     method: opts.method || 'GET',
