@@ -40,13 +40,9 @@ celery_app.autodiscover_tasks([
 
 # Periodic tasks (Celery Beat)
 celery_app.conf.beat_schedule = {
-    "collect-telegram-posts": {
-        "task": "app.workers.collectors.tasks.collect_telegram_posts",
-        "schedule": crontab(minute=f"*/{settings.collection_interval_minutes}"),
-    },
-    "collect-rss-entries": {
-        "task": "app.workers.collectors.tasks.collect_rss_entries",
-        "schedule": crontab(minute=f"*/{settings.collection_interval_minutes}"),
+    "dispatch-collection-cycle": {
+        "task": "app.workers.collectors.tasks.dispatch_collection_cycle",
+        "schedule": crontab(minute="*/1"),
     },
     "process-new-items": {
         "task": "app.workers.pipeline.tasks.process_new_items",

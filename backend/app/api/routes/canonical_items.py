@@ -1,6 +1,6 @@
 """Canonical items routes."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -12,9 +12,11 @@ from app.models.user import User
 from app.schemas.canonical_item import (
     CanonicalItemCreate,
     CanonicalItemListResponse,
+    ManualMediaRequest,
     CanonicalItemResponse,
     CanonicalItemUpdate,
 )
+from app.services.media import save_uploaded_media
 
 router = APIRouter()
 
@@ -137,3 +139,65 @@ async def delete_canonical_item(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     await db.delete(item)
+
+
+@router.post("/{item_id}/media-url", response_model=CanonicalItemResponse)
+async def set_canonical_media_url(
+    item_id: int,
+    payload: ManualMediaRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin", "moderator", "editor")),
+):
+    result = await db.execute(
+        select(CanonicalItem)
+        .where(CanonicalItem.id == item_id)
+        .options(selectinload(CanonicalItem.supporting_sources).selectinload(CanonicalSource.raw_item))
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    if not item.supporting_sources or item.supporting_sources[0].raw_item is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No raw source linked to canonical item")
+    media_url = payload.media_url.strip()
+    if not media_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Media URL must start with http:// or https://")
+    item.supporting_sources[0].raw_item.media_url = media_url
+    await db.flush()
+    await db.refresh(item)
+    return _to_response(item)
+
+
+@router.post("/{item_id}/media-upload", response_model=CanonicalItemResponse)
+async def upload_canonical_media(
+    item_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin", "moderator", "editor")),
+):
+    result = await db.execute(
+        select(CanonicalItem)
+        .where(CanonicalItem.id == item_id)
+        .options(selectinload(CanonicalItem.supporting_sources).selectinload(CanonicalSource.raw_item))
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    if not item.supporting_sources or item.supporting_sources[0].raw_item is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No raw source linked to canonical item")
+
+    content_type = (file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only image uploads are supported")
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty")
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image is too large")
+
+    slug_hint = item.slug or item.headline or f"canonical-{item.id}"
+    media_url = save_uploaded_media(image_bytes, file.filename, slug_hint)
+    item.supporting_sources[0].raw_item.media_url = media_url
+    await db.flush()
+    await db.refresh(item)
+    return _to_response(item)

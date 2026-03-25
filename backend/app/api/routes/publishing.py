@@ -1,7 +1,10 @@
 """Publishing routes."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, select
+from pydantic import BaseModel
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,9 +14,6 @@ from app.models.publish_record import PublishRecord, PublishStatus, PublishTarge
 from app.models.user import User
 from app.schemas.canonical_item import CanonicalItemResponse
 from app.workers.publishers.tasks import publish_to_telegram, publish_to_website
-
-from pydantic import BaseModel
-from datetime import datetime
 
 
 class PublishRequest(BaseModel):
@@ -36,6 +36,7 @@ class PublishRecordResponse(BaseModel):
 
 
 router = APIRouter()
+STALE_PENDING_TTL = timedelta(minutes=5)
 
 
 @router.post("/{item_id}/publish", response_model=CanonicalItemResponse)
@@ -80,8 +81,24 @@ async def publish_item(
             )
         )
     ).scalars().all()
-    if existing_records:
-        targets = ", ".join(sorted(record.target.value for record in existing_records))
+    now = datetime.now(timezone.utc)
+    stale_records: list[PublishRecord] = []
+    blocking_records: list[PublishRecord] = []
+    for record in existing_records:
+        if (
+            record.status == PublishStatus.pending
+            and record.created_at is not None
+            and now - record.created_at >= STALE_PENDING_TTL
+        ):
+            record.status = PublishStatus.failed
+            record.error_message = "Stale pending publish was reset before retry"
+            stale_records.append(record)
+            continue
+        blocking_records.append(record)
+    if stale_records:
+        await db.flush()
+    if blocking_records:
+        targets = ", ".join(sorted(record.target.value for record in blocking_records))
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Publish already pending or completed for targets: {targets}",
@@ -93,13 +110,13 @@ async def publish_item(
         db.add(record)
         created_records.append(record)
 
-    await db.flush()
+    await db.commit()
 
     for record in created_records:
         if record.target == PublishTarget.website:
-            publish_to_website.delay(record.id)
+            publish_to_website.run(record.id)
         elif record.target == PublishTarget.telegram:
-            publish_to_telegram.delay(record.id)
+            publish_to_telegram.run(record.id)
 
     await db.refresh(item)
     return item

@@ -35,6 +35,13 @@ const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'danger'
   duplicate: 'default',
 };
 
+const statusLabel: Record<string, string> = {
+  new: 'Новая',
+  processed: 'Обработана',
+  rejected: 'Отклонена',
+  duplicate: 'Дубликат',
+};
+
 export default function RawNewsPage() {
   const [data, setData] = useState<ListResponse | null>(null);
   const [page, setPage] = useState(1);
@@ -185,7 +192,7 @@ export default function RawNewsPage() {
                           <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
                             {item.source_type || 'source'} #{item.source_id}
                           </span>
-                          <Badge variant={statusVariant[item.status] || 'default'}>{item.status}</Badge>
+                          <Badge variant={statusVariant[item.status] || 'default'}>{statusLabel[item.status] || item.status}</Badge>
                         </div>
                         <h5 className="truncate text-sm font-bold">{item.title || '(без заголовка)'}</h5>
                         <p className="truncate text-xs italic text-neutral-500">{item.text?.slice(0, 120) || '—'}</p>
@@ -209,7 +216,7 @@ export default function RawNewsPage() {
                 <h4 className="mt-2 text-xl font-bold leading-tight">{selected.title || '(без заголовка)'}</h4>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Badge variant={statusVariant[selected.status] || 'default'}>{selected.status}</Badge>
+                <Badge variant={statusVariant[selected.status] || 'default'}>{statusLabel[selected.status] || selected.status}</Badge>
                 <Badge variant="default">{selected.source_type || 'source'} #{selected.source_id}</Badge>
               </div>
               <div className="space-y-2 text-sm text-neutral-600">

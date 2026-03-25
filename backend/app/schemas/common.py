@@ -27,6 +27,42 @@ class SettingResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TelegramAuthStartRequest(BaseModel):
+    api_id: str
+    api_hash: str
+    phone: str
+
+
+class TelegramAuthCompleteRequest(BaseModel):
+    code: str
+    password: str | None = None
+
+
+class TelegramAuthResponse(BaseModel):
+    success: bool
+    message: str
+    session_string: str | None = None
+
+
+class TelegramQrStartRequest(BaseModel):
+    api_id: str
+    api_hash: str
+
+
+class TelegramQrStartResponse(BaseModel):
+    success: bool
+    message: str
+    auth_id: str
+    qr_svg: str
+
+
+class TelegramQrStatusResponse(BaseModel):
+    success: bool
+    status: str
+    message: str
+    session_string: str | None = None
+
+
 class FilterRuleCreate(BaseModel):
     rule_type: str
     pattern: str

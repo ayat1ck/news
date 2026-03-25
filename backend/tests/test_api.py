@@ -22,11 +22,8 @@ async def test_register_user(client: AsyncClient):
         "username": "newuser",
         "password": "securepass",
     })
-    assert response.status_code == 201
-    data = response.json()
-    assert data["email"] == "new@test.com"
-    assert data["username"] == "newuser"
-    assert data["role"] == "editor"
+    assert response.status_code == 403
+    assert "disabled" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -37,7 +34,8 @@ async def test_register_duplicate(client: AsyncClient, admin_user):
         "username": "admin",
         "password": "password",
     })
-    assert response.status_code == 409
+    assert response.status_code == 403
+    assert "disabled" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -158,4 +156,4 @@ async def test_dashboard_stats(client: AsyncClient, admin_token: str):
 async def test_unauthorized_access(client: AsyncClient):
     """Test that protected endpoints require auth."""
     response = await client.get("/api/v1/sources/")
-    assert response.status_code == 403  # No auth header
+    assert response.status_code == 401

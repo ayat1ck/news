@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 type FetchOptions = {
   method?: string;
@@ -10,7 +10,9 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOptions = {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const url = API_BASE ? `${API_BASE}${path}` : path;
+
+  const res = await fetch(url, {
     method: opts.method || 'GET',
     headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,

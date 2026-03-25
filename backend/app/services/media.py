@@ -1,6 +1,7 @@
 """Media helpers for validating source media and generating fallbacks."""
 
 import base64
+import mimetypes
 import re
 import time
 from pathlib import Path
@@ -176,9 +177,14 @@ def _generate_gemini_image(prompt: str, slug_hint: str) -> str | None:
 
 
 def _generate_yandex_image(prompt: str, slug_hint: str) -> str | None:
+    return _generate_yandex_image_with_fallbacks(prompt, slug_hint, tried_prompts=set())
+
+
+def _generate_yandex_image_with_fallbacks(prompt: str, slug_hint: str, tried_prompts: set[str]) -> str | None:
     if not settings.yandex_api_key or not settings.yandex_folder_id:
         return None
 
+    tried_prompts.add(prompt)
     response = httpx.post(
         "https://llm.api.cloud.yandex.net/foundationModels/v1/imageGenerationAsync",
         headers={
@@ -196,17 +202,19 @@ def _generate_yandex_image(prompt: str, slug_hint: str) -> str | None:
         raise ImageGenerationRateLimited("Yandex image generation rate limited")
     if response.status_code == 400:
         detail = response.text
-        safe_prompt = _build_safe_prompt(slug_hint.replace("-", " "), "news")
         detail_lower = detail.lower()
         retriable_400 = (
-            "не могу сгенерировать" in detail_lower
-            or "cannot generate" in detail_lower
+            "cannot generate" in detail_lower
             or "bad request" in detail_lower
             or '"code":3' in detail_lower
             or '"code": 3' in detail_lower
+            or "\\u044f \\u043d\\u0435 \\u043c\\u043e\\u0433\\u0443 \\u0441\\u0433\\u0435\\u043d\\u0435\\u0440\\u0438\\u0440\\u043e\\u0432\\u0430\\u0442\\u044c" in detail_lower
         )
-        if retriable_400 and safe_prompt != prompt:
-            return _generate_yandex_image(safe_prompt, slug_hint)
+        if retriable_400:
+            for fallback_prompt in _build_yandex_fallback_prompts(slug_hint):
+                if fallback_prompt in tried_prompts:
+                    continue
+                return _generate_yandex_image_with_fallbacks(fallback_prompt, slug_hint, tried_prompts)
         raise ImageGenerationRejected(detail)
     response.raise_for_status()
     operation_id = response.json().get("id")
@@ -260,6 +268,13 @@ def _save_image_bytes(image_bytes: bytes, mime_type: str, slug_hint: str) -> str
     return filename
 
 
+def save_uploaded_media(image_bytes: bytes, original_filename: str | None, slug_hint: str) -> str:
+    guessed_type, _ = mimetypes.guess_type(original_filename or "")
+    mime_type = guessed_type or "image/png"
+    filename = _save_image_bytes(image_bytes, mime_type, slug_hint)
+    return f"{settings.backend_url.rstrip('/')}/media/{filename}"
+
+
 def _cleanup_previous_generated_variants(safe_slug: str) -> None:
     root = media_root()
     pattern = re.compile(rf"^{re.escape(safe_slug)}(?:-\d+)?\.(png|jpg|jpeg|webp|svg)$", re.IGNORECASE)
@@ -268,8 +283,7 @@ def _cleanup_previous_generated_variants(safe_slug: str) -> None:
             continue
         if not pattern.match(existing.name):
             continue
-        if existing.is_file():
-            existing.unlink(missing_ok=True)
+        existing.unlink(missing_ok=True)
 
 
 def _build_prompt(headline: str, summary: str, topic: str, image_prompt: str | None = None) -> str:
@@ -289,3 +303,26 @@ def _build_safe_prompt(headline: str, topic: str) -> str:
         "Show symbolic environment, infrastructure, ships, industrial objects, documents, cityscape, or abstract newsroom context. "
         "No officials, no weapons in use, no conflict scenes, no flags, no logos, no text overlay."
     )
+
+
+def _build_yandex_fallback_prompts(slug_hint: str) -> list[str]:
+    headline_hint = slug_hint.replace("-", " ").strip() or "news"
+    return [
+        _build_safe_prompt(headline_hint, "news"),
+        (
+            "Neutral editorial illustration about maritime industry and transport, realistic, modern, "
+            "show port infrastructure, ship silhouette, sea, dock, control room, industrial equipment, "
+            "documents or abstract newsroom environment. No people, no officials, no flags, no weapons, "
+            "no logos, no text overlay."
+        ),
+        (
+            "Safe editorial illustration for a business news website, realistic, modern, clean composition, "
+            "abstract industrial environment, transport infrastructure, water, steel, light, control panels, "
+            "documents, cargo silhouettes. No people, no conflict, no state symbols, no logos, no text overlay."
+        ),
+        (
+            "Abstract editorial background for industry news, realistic, modern, blue and steel palette, "
+            "port lights, geometric shapes, water reflections, machinery silhouettes. No people, no symbols, "
+            "no text overlay."
+        ),
+    ]

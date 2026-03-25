@@ -73,3 +73,7 @@ class PreviewImageRequest(BaseModel):
     regenerate: bool = False
     prompt: str | None = None
     safe_mode: bool = True
+
+
+class ManualMediaRequest(BaseModel):
+    media_url: str

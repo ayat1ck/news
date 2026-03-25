@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import re
 from html import unescape
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
 
 import feedparser
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.raw_item import RawItem, RawItemStatus
+from app.models.setting import Setting
 from app.models.source import Source, SourceType
 from app.workers.celery_app import celery_app
 
@@ -132,6 +133,41 @@ def _get_sync_session() -> Session:
     return Session(_engine)
 
 
+def _get_setting(db: Session, key: str) -> Setting | None:
+    return db.execute(select(Setting).where(Setting.key == key)).scalar_one_or_none()
+
+
+def _get_setting_value(db: Session, key: str, default: str) -> str:
+    setting = _get_setting(db, key)
+    return setting.value if setting and setting.value is not None else default
+
+
+def _get_runtime_secret(db: Session, env_value: str, setting_key: str) -> str:
+    if env_value:
+        return env_value
+    return _get_setting_value(db, setting_key, "")
+
+
+def _set_setting_value(db: Session, key: str, value: str, description: str | None = None) -> None:
+    setting = _get_setting(db, key)
+    if setting is None:
+        setting = Setting(key=key, value=value, description=description)
+        db.add(setting)
+    else:
+        setting.value = value
+        if description is not None and not setting.description:
+            setting.description = description
+
+
+def _get_collection_interval_minutes(db: Session) -> int:
+    raw_value = _get_setting_value(db, "collection_interval_minutes", str(settings.collection_interval_minutes))
+    try:
+        minutes = int(raw_value)
+    except (TypeError, ValueError):
+        minutes = settings.collection_interval_minutes
+    return max(5, min(minutes, 1440))
+
+
 def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -176,6 +212,14 @@ def _clean_social_text(text: str) -> str:
                 filtered_lines.append("")
             continue
         lowered = line.lower()
+        if "\u0431\u043e\u043b\u044c\u0448\u0435 \u043d\u043e\u0432\u043e\u0441\u0442\u0435\u0439" in lowered and "\u0442\u0435\u043b\u0435\u0433\u0440\u0430\u043c" in lowered:
+            continue
+        if (
+            "\u043c\u044b \u0432 \u0434\u0437\u0435\u043d" in lowered
+            or "\u043c\u044b \u0432 telegram" in lowered
+            or "\u043c\u044b \u0432 vk" in lowered
+        ):
+            continue
         if lowered.startswith(
             (
                 "листайте карточки",
@@ -655,10 +699,21 @@ def _extract_vk_photo_url(attachments: list[dict]) -> str | None:
 def collect_telegram_posts(self):
     logger.info("collect_telegram_posts.start")
     try:
-        if not settings.telegram_api_id or not settings.telegram_api_hash:
+        with _get_sync_session() as db:
+            telegram_api_id = _get_runtime_secret(db, settings.telegram_api_id, "telegram_api_id")
+            telegram_api_hash = _get_runtime_secret(db, settings.telegram_api_hash, "telegram_api_hash")
+            telegram_session_string = _get_runtime_secret(db, settings.telegram_session_string, "telegram_session_string")
+
+        if not telegram_api_id or not telegram_api_hash or not telegram_session_string:
             logger.warning("Telegram credentials not configured, skipping")
             return {"collected": 0, "skipped": "no credentials"}
-        collected = asyncio.run(_collect_telegram_posts_async())
+        collected = asyncio.run(
+            _collect_telegram_posts_async(
+                telegram_api_id=telegram_api_id,
+                telegram_api_hash=telegram_api_hash,
+                telegram_session_string=telegram_session_string,
+            )
+        )
     except ImportError:
         logger.warning("Telethon not available")
         collected = 0
@@ -670,15 +725,55 @@ def collect_telegram_posts(self):
     return {"collected": collected}
 
 
-async def _collect_telegram_posts_async() -> int:
+@celery_app.task
+def dispatch_collection_cycle():
+    """Dispatch source collection according to the interval stored in the database."""
+    with _get_sync_session() as db:
+        interval_minutes = _get_collection_interval_minutes(db)
+        last_dispatch_raw = _get_setting_value(db, "last_collection_dispatch_at", "")
+
+        last_dispatch: datetime | None = None
+        if last_dispatch_raw:
+            try:
+                last_dispatch = datetime.fromisoformat(last_dispatch_raw.replace("Z", "+00:00"))
+            except ValueError:
+                last_dispatch = None
+
+        now = datetime.now(timezone.utc)
+        if last_dispatch and now - last_dispatch < timedelta(minutes=interval_minutes):
+            return {
+                "dispatched": 0,
+                "skipped": "interval_not_reached",
+                "interval_minutes": interval_minutes,
+            }
+
+        collect_telegram_posts.delay()
+        collect_rss_entries.delay()
+        collect_vk_posts.delay()
+        _set_setting_value(
+            db,
+            "last_collection_dispatch_at",
+            now.isoformat(),
+            "Last automatic collection dispatch timestamp",
+        )
+        db.commit()
+        logger.info("collection.dispatch.done", interval_minutes=interval_minutes)
+        return {"dispatched": 3, "interval_minutes": interval_minutes}
+
+
+async def _collect_telegram_posts_async(
+    telegram_api_id: str,
+    telegram_api_hash: str,
+    telegram_session_string: str,
+) -> int:
     from telethon import TelegramClient
     from telethon.sessions import StringSession
 
     collected = 0
     client = TelegramClient(
-        StringSession(settings.telegram_session_string),
-        int(settings.telegram_api_id),
-        settings.telegram_api_hash,
+        StringSession(telegram_session_string),
+        int(telegram_api_id),
+        telegram_api_hash,
     )
     await client.connect()
     try:
@@ -859,11 +954,12 @@ def collect_vk_posts(self):
     collected = 0
 
     try:
-        if not settings.vk_access_token:
-            logger.warning("vk.credentials_missing")
-            return {"collected": 0, "skipped": "no credentials"}
-
         with _get_sync_session() as db:
+            vk_access_token = _get_runtime_secret(db, settings.vk_access_token, "vk_access_token")
+            if not vk_access_token:
+                logger.warning("vk.credentials_missing")
+                return {"collected": 0, "skipped": "no credentials"}
+
             sources = db.execute(
                 select(Source).where(
                     Source.source_type == SourceType.vk,
@@ -883,7 +979,7 @@ def collect_vk_posts(self):
                             params={
                                 "domain": domain,
                                 "count": 20,
-                                "access_token": settings.vk_access_token,
+                                "access_token": vk_access_token,
                                 "v": "5.131",
                             },
                         )
