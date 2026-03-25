@@ -1,6 +1,6 @@
 const ENV_API_BASE = process.env.NEXT_PUBLIC_API_URL?.trim() || '';
 
-function resolveApiBase() {
+export function getApiBase() {
   if (ENV_API_BASE) return ENV_API_BASE;
   if (typeof window !== 'undefined') {
     const { protocol, hostname, origin } = window.location;
@@ -24,7 +24,7 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOptions = {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
 
-  const apiBase = resolveApiBase();
+  const apiBase = getApiBase();
   const url = apiBase ? `${apiBase}${path}` : path;
 
   const res = await fetch(url, {

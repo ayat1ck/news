@@ -18,7 +18,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { API_BASE, apiFetch } from '@/lib/api';
+import { apiFetch, getApiBase } from '@/lib/api';
 
 interface CanonicalItem {
   id: number;
@@ -175,8 +175,9 @@ export default function CanonicalPage() {
       async () => {
         const formData = new FormData();
         formData.append('file', file);
-        const uploadUrl = API_BASE
-          ? `${API_BASE}/api/v1/canonical-items/${selected.id}/media-upload`
+        const apiBase = getApiBase();
+        const uploadUrl = apiBase
+          ? `${apiBase}/api/v1/canonical-items/${selected.id}/media-upload`
           : `/api/v1/canonical-items/${selected.id}/media-upload`;
         const response = await fetch(uploadUrl, {
           method: 'POST',
